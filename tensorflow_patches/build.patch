@@ -1,14 +1,13 @@
 diff --git a/tensorflow/compiler/xla/tools/BUILD b/tensorflow/compiler/xla/tools/BUILD
-index aa02deb7bc..0d3f21cc4a 100644
+index 183ab9a8b86..bde1fae800d 100644
 --- a/tensorflow/compiler/xla/tools/BUILD
 +++ b/tensorflow/compiler/xla/tools/BUILD
-@@ -270,6 +270,9 @@ cc_library(
-         "@com_google_absl//absl/strings",
-         "@com_google_protobuf//:protobuf_headers",
-     ],
-+    visibility = [
-+        "//visibility:public",
-+    ],
- )
- 
- tf_cc_test(
+@@ -262,7 +262,7 @@ cc_library(
+     name = "hlo_module_loader",
+     srcs = ["hlo_module_loader.cc"],
+     hdrs = ["hlo_module_loader.h"],
+-    visibility = ["//tensorflow/compiler/xla:friends"],
++    visibility = ["//visibility:public"],
+     deps = [
+         "//tensorflow/compiler/xla:debug_options_flags",
+         "//tensorflow/compiler/xla:statusor",
