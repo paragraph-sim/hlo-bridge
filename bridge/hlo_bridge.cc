@@ -41,6 +41,16 @@ ABSL_FLAG(double, estimate_tflops, 125.0,
           "Estimate for TFLOPs/s for processing unit's performance.");
 ABSL_FLAG(double, estimate_ttrps, 125.0,
           "Estimate for tera-transcendentals per second for processing unit");
+ABSL_FLAG(bool, profiled_data, false,
+    "Flag that enables populating graph with statistics from profiled run");
+ABSL_FLAG(bool, loop_counters_from_trace, true,
+    "Flag that enforces populating counters from profiled data, "
+    "works only if 'profiled_data' flag set to 'true'.");
+ABSL_FLAG(bool, time_from_trace, true,
+    "Flag that enforces populating instruction timings from profiled data, "
+    "works only if 'profiled_data' flag set to 'true'.");
+ABSL_FLAG(std::string, profiled_data_file, "",
+          "File path to the profiled data dump.");
 
 int32_t main(int32_t argc, char** argv) {
   // Parsing flags
@@ -65,6 +75,12 @@ int32_t main(int32_t argc, char** argv) {
     { xla::HloCostAnalysis::kBytesAccessedKey, bps }
   };
 
+  std::string profiled_data_file = absl::GetFlag(FLAGS_profiled_data_file);
+  bool profiled_data = absl::GetFlag(FLAGS_profiled_data);
+  bool loop_counters_from_trace = absl::GetFlag(
+      FLAGS_loop_counters_from_trace);
+  bool time_from_trace = absl::GetFlag(FLAGS_time_from_trace);
+
   std::unique_ptr<xla::HloModule> module;
   xla::hlo_module_loader_details::Config loader_config;
   loader_config.num_replicas = num_replicas;
@@ -72,7 +88,10 @@ int32_t main(int32_t argc, char** argv) {
   TF_CHECK_OK(module_statusor.status());
   module = std::move(module_statusor.ValueOrDie());
 
-  auto graph_proto_statusor = HloConverter(module.get(), perf_prop);
+  auto graph_proto_statusor = HloConverter(
+      module.get(), perf_prop,
+      profiled_data, profiled_data_file,
+      time_from_trace, loop_counters_from_trace);
   TF_CHECK_OK(graph_proto_statusor.status());
   auto graph_proto = graph_proto_statusor.ValueOrDie();
   auto graph_statusor = paragraph::Graph::CreateFromProto(graph_proto,

@@ -16,12 +16,16 @@
 #ifndef BRIDGE_HLO_CONVERTER_H_
 #define BRIDGE_HLO_CONVERTER_H_
 
+#include <string>
+
 #include "bridge/hlo_compute_cost_analysis.h"
 #include "paragraph/graph/graph.h"
 #include "tensorflow/compiler/xla/tools/hlo_module_loader.h"
 
 xla::StatusOr<paragraph::GraphProto> HloConverter(
       const xla::HloModule* module,
-      const ComputeCostAnalysis::Properties& per_second_rates);
+      const ComputeCostAnalysis::Properties& per_second_rates,
+      bool profiled_data = false, const std::string profiled_data_file = "",
+      bool time_from_trace = true, bool loop_counters_from_trace = true);
 
 #endif  // BRIDGE_HLO_CONVERTER_H_

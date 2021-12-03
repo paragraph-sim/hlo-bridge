@@ -106,6 +106,9 @@ xla::Status ComputeCostAnalysis::UpdateInstructionProperties() {
         hlo_property[kOutputBytesAccessedKey] = GetBytesRead(*hlo) / 2;
       }
     }
+    if (hlo->opcode() == xla::HloOpcode::kWhile) {
+      hlo_property[kOccurrencesKey] = 1;
+    }
     TF_RET_CHECK(instruction_properties_.emplace(hlo, hlo_property).second);
   }
   return xla::Status::OK();
