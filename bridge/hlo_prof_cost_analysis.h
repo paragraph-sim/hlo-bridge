@@ -41,6 +41,7 @@ class ProfCostAnalysis : public ComputeCostAnalysis {
                    bool time_from_trace,
                    bool loop_counter_from_trace,
                    const std::string& profiled_data_file,
+                   int64_t num_cores,
                    const xla::HloCostAnalysis::Properties& per_second_rates);
 
   // Method that opens CSV file, reads its fields, and converts them to
@@ -58,9 +59,10 @@ class ProfCostAnalysis : public ComputeCostAnalysis {
     QuotedQuote
   };
 
+  static constexpr size_t kCategoryIndex = 1;
   static constexpr size_t kHloNameIndex = 2;
   static constexpr size_t kOccurrencesIndex = 4;
-  static constexpr size_t kTimeIndex = 5;
+  static constexpr size_t kTimeIndex = 6;
   static constexpr size_t kFlopsIndex = 12;
   static constexpr size_t kMemBWIndex = 13;
 
@@ -76,6 +78,8 @@ class ProfCostAnalysis : public ComputeCostAnalysis {
 
   // File name of CSV profiled data
   std::string filename_;
+
+  int64_t num_cores_;
 
   // Method to read CSV line with quotes, from here
   // https://stackoverflow.com/questions/1120140/how-can-i-read-and-parse-csv-files-in-c

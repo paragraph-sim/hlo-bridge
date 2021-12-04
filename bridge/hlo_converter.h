@@ -23,7 +23,7 @@
 #include "tensorflow/compiler/xla/tools/hlo_module_loader.h"
 
 xla::StatusOr<paragraph::GraphProto> HloConverter(
-      const xla::HloModule* module,
+      const xla::HloModule* module, int64_t num_cores,
       const ComputeCostAnalysis::Properties& per_second_rates,
       bool profiled_data = false, const std::string profiled_data_file = "",
       bool time_from_trace = true, bool loop_counters_from_trace = true);

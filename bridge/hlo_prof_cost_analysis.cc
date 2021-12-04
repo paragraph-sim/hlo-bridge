@@ -28,11 +28,13 @@ ProfCostAnalysis::ProfCostAnalysis(
     bool time_from_trace,
     bool loop_counters_from_trace,
     const std::string& profiled_data_file,
+    int64_t num_cores,
     const Properties& per_second_rates)
   : ComputeCostAnalysis(shape_size, per_second_rates) {
     filename_ = profiled_data_file;
     time_from_trace_ = time_from_trace;
     loop_counters_from_trace_ = loop_counters_from_trace;
+    num_cores_ = num_cores;
   }
 
 xla::Status ProfCostAnalysis::PopulateInstructionStatsFromProfiledData() {
@@ -42,14 +44,33 @@ xla::Status ProfCostAnalysis::PopulateInstructionStatsFromProfiledData() {
   TF_RET_CHECK(csv_stream.is_open());
 
   std::string row;
-  while (!csv_stream.eof()) {
+  // Read CSV header
+  std::getline(csv_stream, row);
+  TF_RET_CHECK(!csv_stream.bad() && !csv_stream.fail());
+  while (!(csv_stream >> std::ws).eof()) {
     std::getline(csv_stream, row);
+    std::cout << "Read line:" << std::endl;
+    std::cout << row << std::endl;
+    std::cout << "bad: " << csv_stream.bad();
+    std::cout << ", fail: " << csv_stream.fail();
+    std::cout <<", eof: " << csv_stream.eof() << std::endl;
     TF_RET_CHECK(!csv_stream.bad() && !csv_stream.fail());
-    auto fields = ReadCSVRow(row);
-    ProfCostAnalysis::ProfiledInstructionStats instruction_stats;
-    TF_CHECK_OK(ParseCSVRow(fields, &instruction_stats));
-    TF_RET_CHECK(instruction_stats_map_.emplace(
-          instruction_stats.name, instruction_stats).second);
+    if (!row.empty()) {
+      auto fields = ReadCSVRow(row);
+      std::cout << "Parsed into " << fields.size() << " fields" << std::endl;
+      ProfCostAnalysis::ProfiledInstructionStats instruction_stats;
+      TF_CHECK_OK(ParseCSVRow(fields, &instruction_stats));
+      std::cout << "Printing instruction stats map" << std::endl;
+      for (auto& it : instruction_stats_map_) {
+        std::cout << it.first << std::endl;
+      }
+      // Some instructions in the ttrace may be marked as unknown type, in that
+      // case we don't add them to the map
+      if (instruction_stats.name != "unknown") {
+        TF_RET_CHECK(instruction_stats_map_.emplace(
+              instruction_stats.name, instruction_stats).second);
+      }
+    }
   }
   return xla::Status::OK();
 }
@@ -57,15 +78,14 @@ xla::Status ProfCostAnalysis::PopulateInstructionStatsFromProfiledData() {
 xla::Status ProfCostAnalysis::UpdateInstructionProperties() {
   // First read the data from profiled run
   TF_CHECK_OK(PopulateInstructionStatsFromProfiledData());
-  // Second, use HloCostAnalysis if corresponding flag is passed
-  if (!time_from_trace_) {
-    TF_CHECK_OK(ComputeCostAnalysis::UpdateInstructionProperties());
-  }
+  // Second, use HloCostAnalysis to pre-populate stats map
+  TF_CHECK_OK(ComputeCostAnalysis::UpdateInstructionProperties());
   for (auto& map_it : hlo_properties_) {
     const xla::HloInstruction* hlo = map_it.first;
     const std::string hlo_name = hlo->name();
     // If metrics are populated from trace, override CostAnalysis defaults
-    if (time_from_trace_) {
+    if (time_from_trace_ && (
+        (hlo->opcode() !=xla::HloOpcode::kAllReduce))) {
       Properties hlo_property;
       if (instruction_stats_map_.find(hlo_name) !=
           instruction_stats_map_.end()) {
@@ -86,10 +106,13 @@ xla::Status ProfCostAnalysis::UpdateInstructionProperties() {
           {kOutputBytesAccessedKey, 0L},
           {kOptimalSecondsKey, 0L}};
       }
+      std::cout << hlo->name() <<std::endl;
+      // for prepopulated values
+      instruction_properties_.erase(hlo);
       TF_RET_CHECK(instruction_properties_.emplace(hlo, hlo_property).second);
+      TF_RET_CHECK(instruction_properties_.find(hlo) !=
+                   instruction_properties_.end());
     }
-    TF_RET_CHECK(instruction_properties_.find(hlo) !=
-                 instruction_properties_.end());
     Properties& hlo_property = instruction_properties_.at(hlo);
     // Zero instruction time if it has 0 occurrences
     if (instruction_stats_map_[hlo_name].occurrences == 0) {
@@ -98,23 +121,34 @@ xla::Status ProfCostAnalysis::UpdateInstructionProperties() {
     // Populate loop counters
     if (hlo->opcode() == xla::HloOpcode::kWhile) {
       if (loop_counters_from_trace_) {
-        uint64_t children_count = 0;
-        uint64_t children_occurrences = 0;
+        int64_t children_count = 0;
+        int64_t children_occurrences = 0;
+        std::cout << "Analyzing loop " << hlo->name() << std::endl;
         for (const auto& child :
             hlo->called_computations().at(0)->instructions()) {
+          std::cout << "Child " << child->name() << ": ";
           if (instruction_stats_map_.find(child->name()) !=
               instruction_stats_map_.end()) {
-            children_count += 1;
-            children_occurrences +=
+            auto child_occurrences =
               instruction_stats_map_[child->name()].occurrences;
+            // Ignore children with no occurrences, as they were not in trace
+            if (child_occurrences > 0) {
+              children_count += 1;
+              children_occurrences += child_occurrences;
+              std::cout << child_occurrences;
+            }
           }
+          std::cout << std::endl;
         }
+        std::cout << "Count for instruction " << hlo->name() << " is ";
+        std::cout << children_occurrences << " / " << children_count << " = ";
         if (children_count > 0) {
-          hlo_property[kOccurrencesKey] = round(
+          hlo_property[kOccurrencesKey] = (int64_t) round(
               children_occurrences / children_count);
         } else {
           hlo_property[kOccurrencesKey] = 1;
         }
+        std::cout << hlo_property[kOccurrencesKey] << std::endl;
       }
     }
   }
@@ -173,27 +207,42 @@ std::vector<std::string> ProfCostAnalysis::ReadCSVRow(const std::string &row) {
 xla::Status ProfCostAnalysis::ParseCSVRow(
     const std::vector<std::string>& row,
     ProfCostAnalysis::ProfiledInstructionStats* instruction_stats) {
-  ProfiledInstructionStats stats;
+  if (row.at(kCategoryIndex) == "unknown") {
+    instruction_stats->name = "unknown";
+    return xla::Status::OK();
+  }
   std::string hlo_string = row.at(kHloNameIndex);
   std::vector<std::string> hlo_split = absl::StrSplit(hlo_string, ' ');
-  stats.name = hlo_split.at(0).substr(1);
+  instruction_stats->name = hlo_split.at(0).substr(1);
+  std::cout << "HLO name " << instruction_stats->name << std::endl;
 
   std::string occurrences_string = row.at(kOccurrencesIndex);
-  TF_RET_CHECK(absl::SimpleAtoi(occurrences_string,
-      &(instruction_stats->occurrences)));
+  std::cout << "Occurrences " << occurrences_string << std::endl;
+  int64_t occurrences_from_string;
+  TF_RET_CHECK(absl::SimpleAtoi(occurrences_string, &occurrences_from_string));
+  instruction_stats->occurrences = (int64_t) round(
+      occurrences_from_string / num_cores_);
 
   std::string time_string = row.at(kTimeIndex);
+  std::cout << "Time " << time_string << std::endl;
   TF_RET_CHECK(absl::SimpleAtod(time_string,
         &(instruction_stats->time_us)));
 
   std::string gflops_sec_string = row.at(kFlopsIndex);
+  std::cout << "GFLOPS/s " << gflops_sec_string << std::endl;
   double gflops_from_string;
   TF_RET_CHECK(absl::SimpleAtod(gflops_sec_string, &gflops_from_string));
-  instruction_stats->flops = gflops_from_string * stats.time_us / 1000;
+  instruction_stats->flops =
+    gflops_from_string * instruction_stats->time_us * 1000;
 
   std::string gbytes_sec_string = row.at(kMemBWIndex);
+  std::cout << "GB/s " << gbytes_sec_string << std::endl;
   double gbytes_from_string;
   TF_RET_CHECK(absl::SimpleAtod(gbytes_sec_string, &gbytes_from_string));
-  instruction_stats->bytes_accessed = gbytes_from_string * stats.time_us / 1000;
+  instruction_stats->bytes_accessed =
+    gbytes_from_string * instruction_stats->time_us * 1000;
+
+  std::cout << "Instruction stats for " << instruction_stats->name << std::endl;
+  std::cout << "Occurrences " << instruction_stats->occurrences << std::endl;
   return xla::Status::OK();
 }

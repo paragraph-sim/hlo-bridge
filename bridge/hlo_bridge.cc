@@ -89,7 +89,7 @@ int32_t main(int32_t argc, char** argv) {
   module = std::move(module_statusor.ValueOrDie());
 
   auto graph_proto_statusor = HloConverter(
-      module.get(), perf_prop,
+      module.get(), num_replicas, perf_prop,
       profiled_data, profiled_data_file,
       time_from_trace, loop_counters_from_trace);
   TF_CHECK_OK(graph_proto_statusor.status());
