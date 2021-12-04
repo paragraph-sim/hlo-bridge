@@ -72,10 +72,20 @@ namespace {
     proto.set_name(instruction->name());
 
     std::string new_opcode = HloToParagraphOpcodeString(instruction->opcode());
-    // Paragraph delay instructions should be leaf nodes, of instructions have
-    // inner subroutines, they should be mapped to call instruction
     if (new_opcode == "delay" && !instruction->called_computations().empty()) {
+      // Paragraph delay instructions should be leaf nodes, of instructions have
+      // inner subroutines, they should be mapped to call instruction
       proto.set_opcode("call");
+    } else if ((new_opcode == "all-gather") ||
+               (new_opcode == "all-reduce") ||
+               (new_opcode == "all-to-all")) {
+      // in case if HLO has a degenerate collective with empty replica groups
+      // during optimization, we consider it a Null instruction
+      if (instruction->replica_groups().empty()) {
+        proto.set_opcode("null");
+      } else {
+        proto.set_opcode(new_opcode);
+      }
     } else {
       proto.set_opcode(new_opcode);
     }
