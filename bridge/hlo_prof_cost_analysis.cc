@@ -25,6 +25,7 @@
 
 ProfCostAnalysis::ProfCostAnalysis(
     const ShapeSizeFunction& shape_size,
+    bool instructions_from_trace,
     bool time_from_trace,
     bool loop_counters_from_trace,
     const std::string& profiled_data_file,
@@ -32,6 +33,7 @@ ProfCostAnalysis::ProfCostAnalysis(
     const Properties& per_second_rates)
   : ComputeCostAnalysis(shape_size, per_second_rates) {
     filename_ = profiled_data_file;
+    instructions_from_trace_ = instructions_from_trace;
     time_from_trace_ = time_from_trace;
     loop_counters_from_trace_ = loop_counters_from_trace;
     num_cores_ = num_cores;
@@ -89,14 +91,20 @@ xla::Status ProfCostAnalysis::UpdateInstructionProperties() {
       Properties hlo_property;
       if (instruction_stats_map_.find(hlo_name) !=
           instruction_stats_map_.end()) {
+        // Currently in trace we have only accessed bytes info, not operands and
+        // outputs split, while in paragraph we have bytes_in and bytes_out.
+        // To preserve memory access information, we put it to output bytes stat
         hlo_property = {
           {kFlopsKey, instruction_stats_map_[hlo_name].flops},
           {kTranscendentalsKey, 0L},
           {kBytesAccessedKey, instruction_stats_map_[hlo_name].bytes_accessed},
           {kOperandBytesAccessedKey, 0L},
-          {kOutputBytesAccessedKey, 0L},
+          {kOutputBytesAccessedKey,
+            instruction_stats_map_[hlo_name].bytes_accessed},
           {kOptimalSecondsKey,
-            instruction_stats_map_[hlo_name].time_us * 0.000001}};
+            instruction_stats_map_[hlo_name].time_us * 0.000001},
+          {kOccurrencesKey,
+            instruction_stats_map_[hlo_name].occurrences}};
       } else {
         hlo_property = {
           {kFlopsKey, 0L},
@@ -104,19 +112,33 @@ xla::Status ProfCostAnalysis::UpdateInstructionProperties() {
           {kBytesAccessedKey, 0L},
           {kOperandBytesAccessedKey, 0L},
           {kOutputBytesAccessedKey, 0L},
-          {kOptimalSecondsKey, 0L}};
+          {kOptimalSecondsKey, 0L},
+          {kOccurrencesKey, 0} };
       }
       std::cout << hlo->name() <<std::endl;
-      // for prepopulated values
+      // for pre-populated values
       instruction_properties_.erase(hlo);
       TF_RET_CHECK(instruction_properties_.emplace(hlo, hlo_property).second);
       TF_RET_CHECK(instruction_properties_.find(hlo) !=
                    instruction_properties_.end());
     }
     Properties& hlo_property = instruction_properties_.at(hlo);
-    // Zero instruction time if it has 0 occurrences
-    if (instruction_stats_map_[hlo_name].occurrences == 0) {
-      hlo_property[kOptimalSecondsKey] = 0;
+    // If we take metrics from ComputeCostAnalysis, but only for instructions
+    // that appear in trace, we need to drop staats from missing instructions
+    // If flag time_from_stats is set, this should take no extra effect
+    if (instructions_from_trace_) {
+      if (instruction_stats_map_.find(hlo->name()) ==
+          instruction_stats_map_.end()) {
+        std::cout << "Erasing stats from instruction " << hlo->name();
+        std::cout << std::endl;
+        hlo_property[kFlopsKey] = 0;
+        hlo_property[kTranscendentalsKey] = 0;
+        hlo_property[kBytesAccessedKey] = 0;
+        hlo_property[kOperandBytesAccessedKey] = 0;
+        hlo_property[kOutputBytesAccessedKey] = 0;
+        hlo_property[kOptimalSecondsKey] = 0;
+        hlo_property[kOccurrencesKey] = 0;
+      }
     }
     // Populate loop counters
     if (hlo->opcode() == xla::HloOpcode::kWhile) {
@@ -149,6 +171,8 @@ xla::Status ProfCostAnalysis::UpdateInstructionProperties() {
           hlo_property[kOccurrencesKey] = 1;
         }
         std::cout << hlo_property[kOccurrencesKey] << std::endl;
+      } else {
+        hlo_property[kOccurrencesKey] = 1;
       }
     }
   }

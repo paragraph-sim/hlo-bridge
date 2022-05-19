@@ -38,6 +38,7 @@ class ProfCostAnalysis : public ComputeCostAnalysis {
   };
 
   ProfCostAnalysis(const xla::HloCostAnalysis::ShapeSizeFunction& shape_size,
+                   bool instructions_from_trace,
                    bool time_from_trace,
                    bool loop_counter_from_trace,
                    const std::string& profiled_data_file,
@@ -62,7 +63,7 @@ class ProfCostAnalysis : public ComputeCostAnalysis {
   static constexpr size_t kCategoryIndex = 1;
   static constexpr size_t kHloNameIndex = 2;
   static constexpr size_t kOccurrencesIndex = 4;
-  static constexpr size_t kTimeIndex = 6;
+  static constexpr size_t kTimeIndex = 8;
   static constexpr size_t kFlopsIndex = 12;
   static constexpr size_t kMemBWIndex = 13;
 
@@ -73,6 +74,7 @@ class ProfCostAnalysis : public ComputeCostAnalysis {
 
   // Flags to choose between using statistics from ComputeCostAnalysis or from
   // profiled data
+  bool instructions_from_trace_;
   bool time_from_trace_;
   bool loop_counters_from_trace_;
 

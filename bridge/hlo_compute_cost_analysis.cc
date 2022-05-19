@@ -98,16 +98,14 @@ xla::Status ComputeCostAnalysis::UpdateInstructionProperties() {
       { kOutputBytesAccessedKey, std::max(static_cast<int64_t>(
           GetBytesWritten(*hlo)), default_value) },
       { kOptimalSecondsKey, std::max(static_cast<double>(
-          optimal_seconds(*hlo)), 0.0) }
+          optimal_seconds(*hlo)), 0.0) },
+      { kOccurrencesKey, 1.0 }
     };
     // HLO cost analysis tends to miss bytes written by AllReduce
     if (hlo->opcode() == xla::HloOpcode::kAllReduce) {
       if (hlo_property[kOutputBytesAccessedKey] == 0) {
         hlo_property[kOutputBytesAccessedKey] = GetBytesRead(*hlo) / 2;
       }
-    }
-    if (hlo->opcode() == xla::HloOpcode::kWhile) {
-      hlo_property[kOccurrencesKey] = 1;
     }
     TF_RET_CHECK(instruction_properties_.emplace(hlo, hlo_property).second);
   }
