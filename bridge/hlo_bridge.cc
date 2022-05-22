@@ -41,6 +41,21 @@ ABSL_FLAG(double, estimate_tflops, 125.0,
           "Estimate for TFLOPs/s for processing unit's performance.");
 ABSL_FLAG(double, estimate_ttrps, 125.0,
           "Estimate for tera-transcendentals per second for processing unit");
+ABSL_FLAG(bool, enforce_postorder, false,
+    "Flag that enforces graph execution to be Post Order.");
+ABSL_FLAG(bool, profiled_data, false,
+    "Flag that enables populating graph with statistics from profiled run");
+ABSL_FLAG(bool, instructions_from_trace, true,
+    "Flag that sets to 0 instructions time if they don't appear in the trace, "
+    "works only if 'profiled_data' flag set to 'true'.");
+ABSL_FLAG(bool, loop_counters_from_trace, true,
+    "Flag that enforces populating loop counters from profiled data, "
+    "works only if 'profiled_data' flag set to 'true'.");
+ABSL_FLAG(bool, time_from_trace, true,
+    "Flag that enforces populating instruction timings from profiled data, "
+    "works only if 'profiled_data' flag set to 'true'.");
+ABSL_FLAG(std::string, profiled_data_file, "",
+          "File path to the profiled data dump.");
 
 int32_t main(int32_t argc, char** argv) {
   // Parsing flags
@@ -64,6 +79,13 @@ int32_t main(int32_t argc, char** argv) {
     { xla::HloCostAnalysis::kTranscendentalsKey, trps },
     { xla::HloCostAnalysis::kBytesAccessedKey, bps }
   };
+  bool enforce_postorder = absl::GetFlag(FLAGS_enforce_postorder);
+
+  std::string profiled_data_file = absl::GetFlag(FLAGS_profiled_data_file);
+  bool profiled_data = absl::GetFlag(FLAGS_profiled_data);
+  bool instructions_from_trace = absl::GetFlag(FLAGS_instructions_from_trace);
+  bool loop_counters_from_trace = absl::GetFlag(FLAGS_loop_counters_from_trace);
+  bool time_from_trace = absl::GetFlag(FLAGS_time_from_trace);
 
   std::unique_ptr<xla::HloModule> module;
   xla::hlo_module_loader_details::Config loader_config;
@@ -72,13 +94,19 @@ int32_t main(int32_t argc, char** argv) {
   TF_CHECK_OK(module_statusor.status());
   module = std::move(module_statusor.ValueOrDie());
 
-  auto graph_proto_statusor = HloConverter(module.get(), perf_prop);
+  auto graph_proto_statusor = HloConverter(
+      module.get(), num_replicas, perf_prop,
+      profiled_data, profiled_data_file, instructions_from_trace,
+      time_from_trace, loop_counters_from_trace);
   TF_CHECK_OK(graph_proto_statusor.status());
   auto graph_proto = graph_proto_statusor.ValueOrDie();
   auto graph_statusor = paragraph::Graph::CreateFromProto(graph_proto,
                                                           /*reset_ids =*/ true);
   CHECK_OK(graph_statusor.status());
   std::unique_ptr<paragraph::Graph> graph = std::move(graph_statusor.value());
+  if (enforce_postorder) {
+    graph->PostOrderEnforcer();
+  }
 
   CHECK_OK(graph->WriteToFile(output_graph_file));
   return 0;

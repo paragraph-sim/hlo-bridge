@@ -98,7 +98,8 @@ xla::Status ComputeCostAnalysis::UpdateInstructionProperties() {
       { kOutputBytesAccessedKey, std::max(static_cast<int64_t>(
           GetBytesWritten(*hlo)), default_value) },
       { kOptimalSecondsKey, std::max(static_cast<double>(
-          optimal_seconds(*hlo)), 0.0) }
+          optimal_seconds(*hlo)), 0.0) },
+      { kOccurrencesKey, 1.0 }
     };
     // HLO cost analysis tends to miss bytes written by AllReduce
     if (hlo->opcode() == xla::HloOpcode::kAllReduce) {

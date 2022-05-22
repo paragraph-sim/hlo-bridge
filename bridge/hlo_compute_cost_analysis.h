@@ -31,6 +31,8 @@ class ComputeCostAnalysis : public xla::HloCostAnalysis {
       "operand_bytes_accessed";
   static constexpr const char kOutputBytesAccessedKey[] =
       "output_bytes_accessed";
+  static constexpr const char kOccurrencesKey[] =
+      "occurrences";
   explicit ComputeCostAnalysis(const ShapeSizeFunction& shape_size);
 
   ComputeCostAnalysis(const ShapeSizeFunction& shape_size,

@@ -19,6 +19,7 @@
 #include <vector>
 
 #include "bridge/hlo_compute_cost_analysis.h"
+#include "bridge/hlo_prof_cost_analysis.h"
 #include "tensorflow/compiler/xla/service/hlo_module.h"
 #include "tensorflow/compiler/xla/util.h"
 
@@ -116,7 +117,8 @@ namespace {
         subroutine_proto.set_execution_probability(1.0);
       }
       if (proto.opcode() == "while") {
-        subroutine_proto.set_execution_count(1);
+        subroutine_proto.set_execution_count(cost_analysis->GetPropertyForHlo(
+              *instruction, ComputeCostAnalysis::kOccurrencesKey));
       } else {
         subroutine_proto.set_execution_count(1);
       }
@@ -252,7 +254,8 @@ namespace {
     return proto;
   }
 
-  xla::StatusOr<std::unique_ptr<ComputeCostAnalysis>> CreateAndRunCostAnalysis(
+  xla::StatusOr<std::unique_ptr<ComputeCostAnalysis>>
+    CreateAndRunComputeCostAnalysis(
           const xla::HloModule* module,
           const ComputeCostAnalysis::Properties per_second_rates) {
     auto cost_analysis = absl::make_unique<ComputeCostAnalysis>(
@@ -262,16 +265,49 @@ namespace {
     TF_CHECK_OK(cost_analysis->UpdateInstructionProperties());
     return cost_analysis;
   }
+
+  xla::StatusOr<std::unique_ptr<ProfCostAnalysis>>
+    CreateAndRunProfCostAnalysis(
+          const xla::HloModule* module, int64_t num_cores,
+          const ComputeCostAnalysis::Properties per_second_rates,
+          bool profiled_data, const std::string profiled_data_file,
+          bool instructions_from_trace,
+          bool time_from_trace, bool loop_counters_from_trace) {
+    auto cost_analysis = absl::make_unique<ProfCostAnalysis>(
+        ShapeSize, instructions_from_trace, time_from_trace,
+        loop_counters_from_trace, profiled_data_file,
+        num_cores, per_second_rates);
+    xla::HloComputation* hlo_computation = module->entry_computation();
+    TF_CHECK_OK(hlo_computation->Accept(cost_analysis.get()));
+    TF_CHECK_OK(cost_analysis->UpdateInstructionProperties());
+    return cost_analysis;
+  }
 }  // namespace
 
 xla::StatusOr<paragraph::GraphProto> HloConverter(
-    const xla::HloModule* module,
-    const ComputeCostAnalysis::Properties& per_second_rates) {
-  TF_ASSIGN_OR_RETURN(auto cost_analysis,
-                      ::CreateAndRunCostAnalysis(module, per_second_rates));
-  TF_ASSIGN_OR_RETURN(auto paragraph_proto,
-                      ::HloModuleToGraphProto(module,
-                                              cost_analysis.get(),
-                                              true));
+      const xla::HloModule* module, int64_t num_cores,
+      const ComputeCostAnalysis::Properties& per_second_rates,
+      bool profiled_data, const std::string profiled_data_file,
+      bool instructions_from_trace, bool time_from_trace,
+      bool loop_counters_from_trace) {
+  paragraph::GraphProto paragraph_proto;
+  if (profiled_data) {
+    TF_ASSIGN_OR_RETURN(auto cost_analysis,
+        ::CreateAndRunProfCostAnalysis(module, num_cores, per_second_rates,
+                                       profiled_data, profiled_data_file,
+                                       instructions_from_trace, time_from_trace,
+                                       loop_counters_from_trace));
+    TF_ASSIGN_OR_RETURN(paragraph_proto,
+                        ::HloModuleToGraphProto(module,
+                                                cost_analysis.get(),
+                                                true));
+  } else {
+    TF_ASSIGN_OR_RETURN(auto cost_analysis,
+        ::CreateAndRunComputeCostAnalysis(module, per_second_rates));
+    TF_ASSIGN_OR_RETURN(paragraph_proto,
+                        ::HloModuleToGraphProto(module,
+                                                cost_analysis.get(),
+                                                true));
+  }
   return paragraph_proto;
 }

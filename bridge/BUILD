@@ -8,10 +8,12 @@ cc_library(
     srcs = [
         "hlo_compute_cost_analysis.cc",
         "hlo_converter.cc",
+        "hlo_prof_cost_analysis.cc",
     ],
     hdrs = [
         "hlo_compute_cost_analysis.h",
         "hlo_converter.h",
+        "hlo_prof_cost_analysis.h",
     ],
     deps = [
         "@paragraph//paragraph/graph:graph",

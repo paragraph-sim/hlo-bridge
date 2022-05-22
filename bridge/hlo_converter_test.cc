@@ -39,5 +39,5 @@ TEST(HloConverter, SmallGraphCost) {
     { ComputeCostAnalysis::kBytesAccessedKey, 1.0 }
   };
   TF_ASSERT_OK_AND_ASSIGN(auto graph,
-                          HloConverter(hlo_module.get(), perf_prop));
+                          HloConverter(hlo_module.get(), 1, perf_prop));
 }
